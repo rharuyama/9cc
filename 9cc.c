@@ -1,37 +1,115 @@
-
+#include <ctype.h>
+#include <stdarg.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
- int main(int argc, char **argv){
-   if (argc != 2){
-     fprintf(stderr, "Invalid number of argument\n");
-     return 1;
-   }
+typedef enum {
+  TK_RESERVED, 
+  TK_NUM,      
+  TK_EOF,      
+} TokenKind;
 
-   char *p = argv[1];
+typedef struct Token Token;
 
-   printf(".intel_syntax noprefix\n");
-   printf(".global main\n");
-   printf("main:\n");
-   printf("    mov rax, %ld\n", strtol(p, &p, 10));
 
-   while(*p){
-     if(*p == '+'){
-       p++;
-       printf("    add rax, %ld\n", strtol(p, &p, 10));
-       //continue; // I wanted to avoid "continue". Insted, I use "else if":
-     }else if(*p == '-'){
-       p++;
-       printf("    sub rax, %ld\n", strtol(p, &p, 10));
-       // Again, original code has "continue;" here.
-     }else{
-       // In the original code, the following two lines are put outside of the if statement.
-       fprintf(stderr, "Unknown character -- '%c'\n", *p);
-       return 1;
-     }
-   }
-   
-   printf("    ret\n");
-   return 0;
- }
+struct Token {
+  TokenKind kind; 
+  Token* next;    
+  int val;        
+  char* str;      
+};
 
+Token* token;
+
+void error(char* fmt, ...) {
+  va_list ap;
+  va_start(ap, fmt);
+  vfprintf(stderr, fmt, ap);
+  fprintf(stderr, "\n");
+  exit(1);
+}
+
+bool consume(char op) {
+  if (token->kind == TK_RESERVED && token->str[0] == op){
+    token = token->next;
+    return true;
+  }else{
+    return false;
+  }
+}
+
+int expect_number() {
+  if (token->kind != TK_NUM)
+    error("数ではありません");
+  int val = token->val;
+  token = token->next;
+  return val;
+}
+
+bool at_eof() {
+  return token->kind == TK_EOF;
+}
+
+Token *new_token(TokenKind kind, Token *cur, char *str) {
+  Token *tok = calloc(1, sizeof(Token));
+  tok->kind = kind;
+  tok->str = str;
+  cur->next = tok;
+  return tok;
+}
+
+Token *tokenize(char *p) {
+  Token head;
+  head.next = NULL;
+  Token *cur = &head;
+
+  while (*p) {
+    if (isspace(*p)) {
+      p++;
+      
+    }else if (*p == '+' || *p == '-') {
+      cur = new_token(TK_RESERVED, cur, p++);
+      
+    }else if (isdigit(*p)) {
+      cur = new_token(TK_NUM, cur, p);
+      cur->val = strtol(p, &p, 10);
+      
+    }else{
+      error("Token contains unknown character -- %c\n", *p);
+    }
+  }
+
+  new_token(TK_EOF, cur, p);
+  return head.next;
+}
+
+int main(int argc, char** argv) {
+  if (argc != 2) {
+    error("Invalid number of argument.");
+    return 1;
+  }
+
+  token = tokenize(argv[1]);
+
+  printf(".intel_syntax noprefix\n");
+  printf(".global main\n");
+  printf("main:\n");
+
+
+  printf("  mov rax, %d\n", expect_number());
+
+  while (!at_eof()) {
+    if (consume('+')) {
+      printf("  add rax, %d\n", expect_number());
+    }else if(consume('-')){
+      printf("  sub rax, %d\n", expect_number());
+    }else{
+      error("Unknown error");
+    }
+  }
+
+  printf("  ret\n");
+  return 0;
+}
